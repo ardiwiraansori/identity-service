@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1/auth')->group(function (): void {
@@ -11,3 +12,16 @@ Route::prefix('v1/auth')->group(function (): void {
         Route::post('/logout', [AuthController::class, 'logout']);
     });
 });
+
+Route::prefix('v1')
+    ->middleware('auth:sanctum')
+    ->group(function (): void {
+        Route::get('/users', [UserController::class, 'index'])
+            ->middleware('can:users.view');
+
+        Route::post('/users', [UserController::class, 'store'])
+            ->middleware('can:users.create');
+
+        Route::get('/users/{user}', [UserController::class, 'show'])
+            ->middleware('can:users.view');
+    });
