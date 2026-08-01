@@ -42,6 +42,9 @@ Route::prefix('v1')
         Route::patch('/roles/{role}', [RoleController::class, 'update'])
             ->middleware('can:roles.manage');
 
+        Route::delete('/roles/{role}', [RoleController::class, 'destroy'])
+            ->middleware('can:roles.manage');
+
         Route::get('/permissions', [PermissionController::class, 'index'])
             ->middleware('can:permissions.view');
     });

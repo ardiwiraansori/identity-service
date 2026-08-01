@@ -8,6 +8,7 @@ use App\Http\Requests\Api\V1\UpdateRoleRequest;
 use App\Http\Resources\Api\V1\RoleResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
@@ -94,5 +95,41 @@ class RoleController extends Controller
         );
 
         return (new RoleResource($role))->response();
+    }
+
+    /**
+     * Menghapus role yang tidak sedang digunakan.
+     *
+     * @throws ValidationException
+     */
+    public function destroy(Role $role): HttpResponse
+    {
+        abort_unless(
+            $role->guard_name === 'web',
+            Response::HTTP_NOT_FOUND,
+        );
+
+        if ($role->name === 'super-admin') {
+            throw ValidationException::withMessages([
+                'role' => [
+                    'Role super-admin tidak dapat dihapus.',
+                ],
+            ]);
+        }
+
+        if ($role->users()->exists()) {
+            throw ValidationException::withMessages([
+                'role' => [
+                    'Role yang masih digunakan user tidak dapat dihapus.',
+                ],
+            ]);
+        }
+
+        DB::transaction(function () use ($role): void {
+            $role->syncPermissions([]);
+            $role->delete();
+        });
+
+        return response()->noContent();
     }
 }

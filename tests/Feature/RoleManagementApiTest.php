@@ -838,4 +838,175 @@ class RoleManagementApiTest extends TestCase
 
         return $authenticatedUser;
     }
+
+    public function test_guest_cannot_delete_role(): void
+    {
+        $role = Role::findOrCreate(
+            'finance-manager',
+            'web',
+        );
+
+        $response = $this->deleteJson(
+            "/api/v1/roles/{$role->id}",
+        );
+
+        $response
+            ->assertUnauthorized()
+            ->assertJson([
+                'message' => 'Unauthenticated.',
+            ]);
+
+        $this->assertDatabaseHas('roles', [
+            'id' => $role->id,
+            'name' => 'finance-manager',
+            'guard_name' => 'web',
+        ]);
+    }
+
+    public function test_authenticated_user_without_permission_cannot_delete_role(): void
+    {
+        $authenticatedUser = User::factory()->create();
+
+        $role = Role::findOrCreate(
+            'finance-manager',
+            'web',
+        );
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->deleteJson(
+                "/api/v1/roles/{$role->id}",
+            );
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseHas('roles', [
+            'id' => $role->id,
+            'name' => 'finance-manager',
+            'guard_name' => 'web',
+        ]);
+    }
+
+    public function test_authenticated_user_with_permission_can_delete_unused_role(): void
+    {
+        $authenticatedUser = $this->createRoleManager();
+
+        $usersViewPermission = Permission::findOrCreate(
+            'users.view',
+            'web',
+        );
+
+        $role = Role::findOrCreate(
+            'finance-manager',
+            'web',
+        );
+
+        $role->givePermissionTo($usersViewPermission);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->deleteJson(
+                "/api/v1/roles/{$role->id}",
+            );
+
+        $response->assertNoContent();
+
+        $this->assertDatabaseMissing('roles', [
+            'id' => $role->id,
+        ]);
+
+        $this->assertDatabaseMissing('role_has_permissions', [
+            'role_id' => $role->id,
+            'permission_id' => $usersViewPermission->id,
+        ]);
+    }
+
+    public function test_role_assigned_to_user_cannot_be_deleted(): void
+    {
+        $authenticatedUser = $this->createRoleManager();
+
+        $role = Role::findOrCreate(
+            'finance-manager',
+            'web',
+        );
+
+        $assignedUser = User::factory()->create();
+        $assignedUser->assignRole($role);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->deleteJson(
+                "/api/v1/roles/{$role->id}",
+            );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors([
+                'role',
+            ]);
+
+        $this->assertDatabaseHas('roles', [
+            'id' => $role->id,
+            'name' => 'finance-manager',
+            'guard_name' => 'web',
+        ]);
+
+        $this->assertDatabaseHas('model_has_roles', [
+            'role_id' => $role->id,
+            'model_type' => User::class,
+            'model_id' => $assignedUser->id,
+        ]);
+    }
+
+    public function test_super_admin_role_cannot_be_deleted(): void
+    {
+        $authenticatedUser = $this->createRoleManager();
+
+        $role = Role::findOrCreate(
+            'super-admin',
+            'web',
+        );
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->deleteJson(
+                "/api/v1/roles/{$role->id}",
+            );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors([
+                'role',
+            ]);
+
+        $this->assertDatabaseHas('roles', [
+            'id' => $role->id,
+            'name' => 'super-admin',
+            'guard_name' => 'web',
+        ]);
+    }
+
+    public function test_role_using_another_guard_cannot_be_deleted(): void
+    {
+        $authenticatedUser = $this->createRoleManager();
+
+        $role = Role::findOrCreate(
+            'api-manager',
+            'api',
+        );
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->deleteJson(
+                "/api/v1/roles/{$role->id}",
+            );
+
+        $response->assertNotFound();
+
+        $this->assertDatabaseHas('roles', [
+            'id' => $role->id,
+            'name' => 'api-manager',
+            'guard_name' => 'api',
+        ]);
+    }
 }
