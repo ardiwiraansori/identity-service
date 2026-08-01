@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -30,4 +31,7 @@ Route::prefix('v1')
 
         Route::patch('/users/{user}/deactivate', [UserController::class, 'deactivate'])
             ->middleware('can:users.deactivate');
+
+        Route::get('/roles', [RoleController::class, 'index'])
+            ->middleware('can:roles.view');
     });
