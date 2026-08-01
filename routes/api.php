@@ -39,6 +39,9 @@ Route::prefix('v1')
         Route::post('/roles', [RoleController::class, 'store'])
             ->middleware('can:roles.manage');
 
+        Route::patch('/roles/{role}', [RoleController::class, 'update'])
+            ->middleware('can:roles.manage');
+
         Route::get('/permissions', [PermissionController::class, 'index'])
             ->middleware('can:permissions.view');
     });
