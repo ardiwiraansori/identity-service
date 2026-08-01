@@ -27,4 +27,7 @@ Route::prefix('v1')
 
         Route::patch('/users/{user}', [UserController::class, 'update'])
             ->middleware('can:users.update');
+
+        Route::patch('/users/{user}/deactivate', [UserController::class, 'deactivate'])
+            ->middleware('can:users.deactivate');
     });

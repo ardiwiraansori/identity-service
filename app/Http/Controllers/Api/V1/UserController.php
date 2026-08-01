@@ -92,4 +92,21 @@ class UserController extends Controller
 
         return new UserResource($user);
     }
+
+    /**
+     * Menonaktifkan akun user dan mencabut seluruh token aksesnya.
+     */
+    public function deactivate(User $user): UserResource
+    {
+        $user = DB::transaction(function () use ($user): User {
+            $user->is_active = false;
+            $user->save();
+
+            $user->tokens()->delete();
+
+            return $user->refresh()->load('roles');
+        });
+
+        return new UserResource($user);
+    }
 }

@@ -473,4 +473,393 @@ class UserManagementApiTest extends TestCase
             'email' => 'target@example.com',
         ]);
     }
+
+    public function test_update_user_rejects_email_used_by_another_user(): void
+    {
+        $permission = Permission::findOrCreate('users.update', 'web');
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $targetUser = User::factory()->create([
+            'email' => 'target@example.com',
+        ]);
+
+        User::factory()->create([
+            'email' => 'used@example.com',
+        ]);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}",
+                [
+                    'email' => 'used@example.com',
+                ],
+            );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['email']);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $targetUser->id,
+            'email' => 'target@example.com',
+        ]);
+    }
+
+    public function test_authenticated_user_with_permission_can_update_user_email(): void
+    {
+        $permission = Permission::findOrCreate('users.update', 'web');
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $targetUser = User::factory()->create([
+            'email' => 'old@example.com',
+        ]);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}",
+                [
+                    'email' => 'new@example.com',
+                ],
+            );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.id', $targetUser->id)
+            ->assertJsonPath('data.email', 'new@example.com');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $targetUser->id,
+            'email' => 'new@example.com',
+        ]);
+
+        $this->assertDatabaseMissing('users', [
+            'id' => $targetUser->id,
+            'email' => 'old@example.com',
+        ]);
+    }
+
+    public function test_authenticated_user_with_permission_can_update_user_role(): void
+    {
+        $permission = Permission::findOrCreate('users.update', 'web');
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $oldRole = Role::findOrCreate('old-role', 'web');
+        $newRole = Role::findOrCreate('new-role', 'web');
+
+        $targetUser = User::factory()->create();
+        $targetUser->assignRole($oldRole);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}",
+                [
+                    'role' => $newRole->name,
+                ],
+            );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.id', $targetUser->id)
+            ->assertJsonPath('data.roles.0', $newRole->name);
+
+        $targetUser->refresh();
+
+        $this->assertTrue($targetUser->hasRole($newRole));
+        $this->assertFalse($targetUser->hasRole($oldRole));
+    }
+
+    public function test_update_user_rejects_invalid_role(): void
+    {
+        $permission = Permission::findOrCreate('users.update', 'web');
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $originalRole = Role::findOrCreate('original-role', 'web');
+
+        $targetUser = User::factory()->create();
+        $targetUser->assignRole($originalRole);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}",
+                [
+                    'role' => 'role-does-not-exist',
+                ],
+            );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['role']);
+
+        $targetUser->refresh();
+
+        $this->assertTrue($targetUser->hasRole($originalRole));
+        $this->assertFalse($targetUser->hasRole('role-does-not-exist'));
+    }
+
+    public function test_authenticated_user_with_permission_can_update_user_password(): void
+    {
+        $permission = Permission::findOrCreate('users.update', 'web');
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $targetUser = User::factory()->create([
+            'password' => 'OldPassword123!',
+        ]);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}",
+                [
+                    'password' => 'NewPassword123!',
+                    'password_confirmation' => 'NewPassword123!',
+                ],
+            );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.id', $targetUser->id)
+            ->assertJsonMissingPath('data.password');
+
+        $targetUser->refresh();
+
+        $this->assertTrue(
+            Hash::check('NewPassword123!', $targetUser->password),
+        );
+
+        $this->assertFalse(
+            Hash::check('OldPassword123!', $targetUser->password),
+        );
+
+        $this->assertNotSame(
+            'NewPassword123!',
+            $targetUser->password,
+        );
+    }
+
+    public function test_update_user_rejects_mismatched_password_confirmation(): void
+    {
+        $permission = Permission::findOrCreate('users.update', 'web');
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $targetUser = User::factory()->create([
+            'password' => 'OldPassword123!',
+        ]);
+
+        $originalPasswordHash = $targetUser->password;
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}",
+                [
+                    'password' => 'NewPassword123!',
+                    'password_confirmation' => 'DifferentPassword123!',
+                ],
+            );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['password']);
+
+        $targetUser->refresh();
+
+        $this->assertSame(
+            $originalPasswordHash,
+            $targetUser->password,
+        );
+
+        $this->assertTrue(
+            Hash::check('OldPassword123!', $targetUser->password),
+        );
+
+        $this->assertFalse(
+            Hash::check('NewPassword123!', $targetUser->password),
+        );
+    }
+
+    public function test_update_user_rejects_weak_password(): void
+    {
+        $permission = Permission::findOrCreate('users.update', 'web');
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $targetUser = User::factory()->create([
+            'password' => 'OldPassword123!',
+        ]);
+
+        $originalPasswordHash = $targetUser->password;
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}",
+                [
+                    'password' => 'password',
+                    'password_confirmation' => 'password',
+                ],
+            );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['password']);
+
+        $targetUser->refresh();
+
+        $this->assertSame(
+            $originalPasswordHash,
+            $targetUser->password,
+        );
+
+        $this->assertTrue(
+            Hash::check('OldPassword123!', $targetUser->password),
+        );
+
+        $this->assertFalse(
+            Hash::check('password', $targetUser->password),
+        );
+    }
+
+    public function test_guest_cannot_deactivate_user(): void
+    {
+        $targetUser = User::factory()->create([
+            'is_active' => true,
+        ]);
+
+        $response = $this->patchJson(
+            "/api/v1/users/{$targetUser->id}/deactivate",
+        );
+
+        $response->assertUnauthorized();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $targetUser->id,
+            'is_active' => true,
+        ]);
+    }
+
+    public function test_authenticated_user_without_permission_cannot_deactivate_user(): void
+    {
+        $authenticatedUser = User::factory()->create();
+
+        $targetUser = User::factory()->create([
+            'is_active' => true,
+        ]);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}/deactivate",
+            );
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $targetUser->id,
+            'is_active' => true,
+        ]);
+    }
+
+    public function test_authenticated_user_with_permission_can_deactivate_user(): void
+    {
+        $permission = Permission::findOrCreate('users.deactivate', 'web');
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $targetUser = User::factory()->create([
+            'is_active' => true,
+        ]);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}/deactivate",
+            );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.id', $targetUser->id)
+            ->assertJsonPath('data.is_active', false);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $targetUser->id,
+            'is_active' => false,
+        ]);
+    }
+
+    public function test_deactivating_user_revokes_all_of_their_tokens(): void
+    {
+        $permission = Permission::findOrCreate('users.deactivate', 'web');
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $targetUser = User::factory()->create([
+            'is_active' => true,
+        ]);
+
+        $targetUser->createToken('first-token');
+        $targetUser->createToken('second-token');
+
+        $this->assertSame(2, $targetUser->tokens()->count());
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}/deactivate",
+            );
+
+        $response->assertOk();
+
+        $this->assertDatabaseMissing('personal_access_tokens', [
+            'tokenable_type' => User::class,
+            'tokenable_id' => $targetUser->id,
+        ]);
+    }
+
+    public function test_user_cannot_deactivate_themselves(): void
+    {
+        $permission = Permission::findOrCreate('users.deactivate', 'web');
+
+        $authenticatedUser = User::factory()->create([
+            'is_active' => true,
+        ]);
+
+        $authenticatedUser->givePermissionTo($permission);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$authenticatedUser->id}/deactivate",
+            );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'You cannot deactivate your own account.',
+            );
+
+        $this->assertDatabaseHas('users', [
+            'id' => $authenticatedUser->id,
+            'is_active' => true,
+        ]);
+    }
 }
