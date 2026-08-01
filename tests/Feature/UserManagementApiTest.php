@@ -862,4 +862,219 @@ class UserManagementApiTest extends TestCase
             'is_active' => true,
         ]);
     }
+
+    public function test_last_super_admin_cannot_be_deactivated(): void
+    {
+        $permission = Permission::findOrCreate(
+            'users.deactivate',
+            'web',
+        );
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $superAdminRole = Role::findOrCreate(
+            'super-admin',
+            'web',
+        );
+
+        $lastSuperAdmin = User::factory()->create([
+            'is_active' => true,
+        ]);
+
+        $lastSuperAdmin->assignRole($superAdminRole);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$lastSuperAdmin->id}/deactivate",
+            );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'The last super-admin cannot be deactivated.',
+            );
+
+        $this->assertDatabaseHas('users', [
+            'id' => $lastSuperAdmin->id,
+            'is_active' => true,
+        ]);
+
+        $this->assertTrue(
+            $lastSuperAdmin->refresh()->hasRole('super-admin'),
+        );
+    }
+
+    public function test_super_admin_can_be_deactivated_when_another_active_super_admin_exists(): void
+    {
+        $permission = Permission::findOrCreate(
+            'users.deactivate',
+            'web',
+        );
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $superAdminRole = Role::findOrCreate(
+            'super-admin',
+            'web',
+        );
+
+        $targetSuperAdmin = User::factory()->create([
+            'is_active' => true,
+        ]);
+
+        $remainingSuperAdmin = User::factory()->create([
+            'is_active' => true,
+        ]);
+
+        $targetSuperAdmin->assignRole($superAdminRole);
+        $remainingSuperAdmin->assignRole($superAdminRole);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetSuperAdmin->id}/deactivate",
+            );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.id', $targetSuperAdmin->id)
+            ->assertJsonPath('data.is_active', false);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $targetSuperAdmin->id,
+            'is_active' => false,
+        ]);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $remainingSuperAdmin->id,
+            'is_active' => true,
+        ]);
+
+        $this->assertTrue(
+            $remainingSuperAdmin->refresh()->hasRole('super-admin'),
+        );
+    }
+
+    public function test_last_active_super_admin_cannot_lose_super_admin_role(): void
+    {
+        $permission = Permission::findOrCreate(
+            'users.update',
+            'web',
+        );
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $superAdminRole = Role::findOrCreate(
+            'super-admin',
+            'web',
+        );
+
+        $replacementRole = Role::findOrCreate(
+            'property-admin',
+            'web',
+        );
+
+        $lastActiveSuperAdmin = User::factory()->create([
+            'is_active' => true,
+        ]);
+
+        $lastActiveSuperAdmin->assignRole($superAdminRole);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$lastActiveSuperAdmin->id}",
+                [
+                    'role' => $replacementRole->name,
+                ],
+            );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'The last active super-admin cannot lose the super-admin role.',
+            );
+
+        $lastActiveSuperAdmin->refresh();
+
+        $this->assertTrue(
+            $lastActiveSuperAdmin->hasRole('super-admin'),
+        );
+
+        $this->assertFalse(
+            $lastActiveSuperAdmin->hasRole('property-admin'),
+        );
+    }
+
+    public function test_super_admin_can_lose_role_when_another_active_super_admin_exists(): void
+    {
+        $permission = Permission::findOrCreate(
+            'users.update',
+            'web',
+        );
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $superAdminRole = Role::findOrCreate(
+            'super-admin',
+            'web',
+        );
+
+        $replacementRole = Role::findOrCreate(
+            'property-admin',
+            'web',
+        );
+
+        $targetSuperAdmin = User::factory()->create([
+            'is_active' => true,
+        ]);
+
+        $remainingSuperAdmin = User::factory()->create([
+            'is_active' => true,
+        ]);
+
+        $targetSuperAdmin->assignRole($superAdminRole);
+        $remainingSuperAdmin->assignRole($superAdminRole);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetSuperAdmin->id}",
+                [
+                    'role' => $replacementRole->name,
+                ],
+            );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.id', $targetSuperAdmin->id)
+            ->assertJsonPath(
+                'data.roles.0',
+                $replacementRole->name,
+            );
+
+        $targetSuperAdmin->refresh();
+        $remainingSuperAdmin->refresh();
+
+        $this->assertFalse(
+            $targetSuperAdmin->hasRole('super-admin'),
+        );
+
+        $this->assertTrue(
+            $targetSuperAdmin->hasRole('property-admin'),
+        );
+
+        $this->assertTrue(
+            $remainingSuperAdmin->hasRole('super-admin'),
+        );
+
+        $this->assertTrue($remainingSuperAdmin->is_active);
+    }
 }

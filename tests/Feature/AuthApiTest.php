@@ -110,4 +110,29 @@ class AuthApiTest extends TestCase
                 'message' => 'Unauthenticated.',
             ]);
     }
+
+    public function test_inactive_user_cannot_login(): void
+    {
+        User::factory()->create([
+            'email' => 'inactive-user@property.test',
+            'password' => 'Secret123!',
+            'is_active' => false,
+        ]);
+
+        $response = $this->postJson('/api/v1/auth/login', [
+            'email' => 'inactive-user@property.test',
+            'password' => 'Secret123!',
+            'device_name' => 'automated-test',
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['email'])
+            ->assertJsonPath(
+                'errors.email.0',
+                'Akun pengguna tidak aktif.',
+            );
+
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+    }
 }

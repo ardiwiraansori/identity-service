@@ -8,6 +8,7 @@ use App\Http\Requests\Api\V1\UpdateUserRequest;
 use App\Http\Resources\Api\V1\UserResource;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 
@@ -70,25 +71,43 @@ class UserController extends Controller
         UpdateUserRequest $request,
         User $user,
     ): UserResource {
-        $user = DB::transaction(function () use ($request, $user): User {
-            $validated = $request->validated();
+        $validated = $request->validated();
 
-            $user->fill(
-                $request->safe()->only([
-                    'name',
-                    'email',
-                    'password',
-                ]),
+        $isRemovingLastActiveSuperAdminRole =
+            array_key_exists('role', $validated)
+            && $validated['role'] !== 'super-admin'
+            && $user->is_active
+            && $user->hasRole('super-admin')
+            && User::role('super-admin')
+                ->where('is_active', true)
+                ->count() <= 1;
+
+        if ($isRemovingLastActiveSuperAdminRole) {
+            abort(
+                422,
+                'The last active super-admin cannot lose the super-admin role.',
             );
+        }
 
-            $user->save();
+        $user = DB::transaction(
+            function () use ($request, $validated, $user): User {
+                $user->fill(
+                    $request->safe()->only([
+                        'name',
+                        'email',
+                        'password',
+                    ]),
+                );
 
-            if (array_key_exists('role', $validated)) {
-                $user->syncRoles([$validated['role']]);
-            }
+                $user->save();
 
-            return $user->refresh()->load('roles');
-        });
+                if (array_key_exists('role', $validated)) {
+                    $user->syncRoles([$validated['role']]);
+                }
+
+                return $user->refresh()->load('roles');
+            },
+        );
 
         return new UserResource($user);
     }
@@ -96,8 +115,27 @@ class UserController extends Controller
     /**
      * Menonaktifkan akun user dan mencabut seluruh token aksesnya.
      */
-    public function deactivate(User $user): UserResource
-    {
+    public function deactivate(
+        Request $request,
+        User $user,
+    ): UserResource {
+        if ($request->user()->is($user)) {
+            abort(422, 'You cannot deactivate your own account.');
+        }
+
+        $isLastActiveSuperAdmin = $user->is_active
+            && $user->hasRole('super-admin')
+            && User::role('super-admin')
+                ->where('is_active', true)
+                ->count() <= 1;
+
+        if ($isLastActiveSuperAdmin) {
+            abort(
+                422,
+                'The last super-admin cannot be deactivated.',
+            );
+        }
+
         $user = DB::transaction(function () use ($user): User {
             $user->is_active = false;
             $user->save();

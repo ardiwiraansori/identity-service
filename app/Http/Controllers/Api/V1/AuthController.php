@@ -34,6 +34,12 @@ class AuthController extends Controller
             ]);
         }
 
+        if (! $user->is_active) {
+            throw ValidationException::withMessages([
+                'email' => ['Akun pengguna tidak aktif.'],
+            ]);
+        }
+
         $token = $user
             ->createToken($validated['device_name'] ?? 'react-web')
             ->plainTextToken;
