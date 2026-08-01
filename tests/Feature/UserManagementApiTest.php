@@ -366,4 +366,111 @@ class UserManagementApiTest extends TestCase
             'email' => 'budi.sales@property.test',
         ]);
     }
+
+    public function test_guest_cannot_update_user(): void
+    {
+        $user = User::factory()->create();
+
+        $originalName = $user->name;
+
+        $response = $this->patchJson(
+            "/api/v1/users/{$user->id}",
+            [
+                'name' => 'Updated User',
+            ],
+        );
+
+        $response->assertUnauthorized();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'name' => $originalName,
+        ]);
+    }
+
+    public function test_authenticated_user_without_permission_cannot_update_user(): void
+    {
+        $authenticatedUser = User::factory()->create();
+        $targetUser = User::factory()->create();
+
+        $originalName = $targetUser->name;
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}",
+                [
+                    'name' => 'Updated User',
+                ],
+            );
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $targetUser->id,
+            'name' => $originalName,
+        ]);
+    }
+
+    public function test_authenticated_user_with_permission_can_update_user_name(): void
+    {
+        $permission = Permission::findOrCreate('users.update', 'web');
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $targetUser = User::factory()->create([
+            'name' => 'Original User',
+        ]);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}",
+                [
+                    'name' => 'Updated User',
+                ],
+            );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.id', $targetUser->id)
+            ->assertJsonPath('data.name', 'Updated User');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $targetUser->id,
+            'name' => 'Updated User',
+        ]);
+    }
+
+    public function test_update_user_allows_existing_email_of_the_same_user(): void
+    {
+        $permission = Permission::findOrCreate('users.update', 'web');
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo($permission);
+
+        $targetUser = User::factory()->create([
+            'email' => 'target@example.com',
+        ]);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->patchJson(
+                "/api/v1/users/{$targetUser->id}",
+                [
+                    'email' => 'target@example.com',
+                ],
+            );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.id', $targetUser->id)
+            ->assertJsonPath('data.email', 'target@example.com');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $targetUser->id,
+            'email' => 'target@example.com',
+        ]);
+    }
 }

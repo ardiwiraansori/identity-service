@@ -24,4 +24,7 @@ Route::prefix('v1')
 
         Route::get('/users/{user}', [UserController::class, 'show'])
             ->middleware('can:users.view');
+
+        Route::patch('/users/{user}', [UserController::class, 'update'])
+            ->middleware('can:users.update');
     });
