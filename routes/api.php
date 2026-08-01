@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\PermissionController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Support\Facades\Route;
@@ -34,4 +35,7 @@ Route::prefix('v1')
 
         Route::get('/roles', [RoleController::class, 'index'])
             ->middleware('can:roles.view');
+
+        Route::get('/permissions', [PermissionController::class, 'index'])
+            ->middleware('can:permissions.view');
     });
