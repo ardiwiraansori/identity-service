@@ -1009,4 +1009,150 @@ class RoleManagementApiTest extends TestCase
             'guard_name' => 'api',
         ]);
     }
+
+    public function test_guest_cannot_view_role_detail(): void
+    {
+        $role = Role::findOrCreate(
+            'finance-manager',
+            'web',
+        );
+
+        $response = $this->getJson(
+            "/api/v1/roles/{$role->id}",
+        );
+
+        $response
+            ->assertUnauthorized()
+            ->assertJson([
+                'message' => 'Unauthenticated.',
+            ]);
+    }
+
+    public function test_authenticated_user_without_permission_cannot_view_role_detail(): void
+    {
+        $authenticatedUser = User::factory()->create();
+
+        $role = Role::findOrCreate(
+            'finance-manager',
+            'web',
+        );
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->getJson(
+                "/api/v1/roles/{$role->id}",
+            );
+
+        $response->assertForbidden();
+    }
+
+    public function test_authenticated_user_with_permission_can_view_role_detail(): void
+    {
+        $rolesViewPermission = Permission::findOrCreate(
+            'roles.view',
+            'web',
+        );
+
+        $usersViewPermission = Permission::findOrCreate(
+            'users.view',
+            'web',
+        );
+
+        $usersCreatePermission = Permission::findOrCreate(
+            'users.create',
+            'web',
+        );
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo(
+            $rolesViewPermission,
+        );
+
+        $role = Role::findOrCreate(
+            'finance-manager',
+            'web',
+        );
+
+        $role->syncPermissions([
+            $usersViewPermission,
+            $usersCreatePermission,
+        ]);
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->getJson(
+                "/api/v1/roles/{$role->id}",
+            );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.id', $role->id)
+            ->assertJsonPath(
+                'data.name',
+                'finance-manager',
+            )
+            ->assertJsonPath(
+                'data.permissions.0',
+                'users.create',
+            )
+            ->assertJsonPath(
+                'data.permissions.1',
+                'users.view',
+            )
+            ->assertJsonMissingPath('data.guard_name')
+            ->assertJsonStructure([
+                'data' => [
+                    'id',
+                    'name',
+                    'permissions',
+                    'created_at',
+                    'updated_at',
+                ],
+            ]);
+    }
+
+    public function test_role_detail_using_another_guard_cannot_be_viewed(): void
+    {
+        $rolesViewPermission = Permission::findOrCreate(
+            'roles.view',
+            'web',
+        );
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo(
+            $rolesViewPermission,
+        );
+
+        $role = Role::findOrCreate(
+            'api-manager',
+            'api',
+        );
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->getJson(
+                "/api/v1/roles/{$role->id}",
+            );
+
+        $response->assertNotFound();
+    }
+
+    public function test_role_detail_returns_not_found_for_unknown_role(): void
+    {
+        $rolesViewPermission = Permission::findOrCreate(
+            'roles.view',
+            'web',
+        );
+
+        $authenticatedUser = User::factory()->create();
+        $authenticatedUser->givePermissionTo(
+            $rolesViewPermission,
+        );
+
+        $response = $this
+            ->actingAs($authenticatedUser, 'sanctum')
+            ->getJson('/api/v1/roles/999999');
+
+        $response->assertNotFound();
+    }
 }

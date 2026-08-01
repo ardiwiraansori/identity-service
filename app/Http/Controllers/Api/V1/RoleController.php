@@ -31,6 +31,21 @@ class RoleController extends Controller
     }
 
     /**
+     * Menampilkan detail role beserta permission.
+     */
+    public function show(Role $role): RoleResource
+    {
+        abort_unless(
+            $role->guard_name === 'web',
+            Response::HTTP_NOT_FOUND,
+        );
+
+        return new RoleResource(
+            $role->load('permissions'),
+        );
+    }
+
+    /**
      * Membuat role baru beserta permission.
      */
     public function store(StoreRoleRequest $request): JsonResponse
