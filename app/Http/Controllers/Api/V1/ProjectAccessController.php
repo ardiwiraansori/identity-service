@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreProjectAccessRequest;
 use App\Http\Resources\Api\V1\ProjectUserAccessResource;
+use App\Http\Resources\Api\V1\UserResource;
 use App\Models\ProjectUserAccess;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -26,6 +27,26 @@ class ProjectAccessController extends Controller
         return ProjectUserAccessResource::collection(
             $projectAccesses,
         );
+    }
+
+    /**
+     * Menampilkan daftar user yang memiliki akses ke project.
+     */
+    public function users(int $projectId): AnonymousResourceCollection
+    {
+        $users = User::query()
+            ->with('roles')
+            ->whereHas(
+                'projectAccesses',
+                fn ($query) => $query->where(
+                    'project_id',
+                    $projectId,
+                ),
+            )
+            ->orderBy('name')
+            ->paginate(15);
+
+        return UserResource::collection($users);
     }
 
     /**

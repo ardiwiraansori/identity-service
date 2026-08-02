@@ -51,6 +51,13 @@ Route::prefix('v1')
             ->middleware('can:project-access.manage')
             ->scopeBindings();
 
+        Route::get(
+            '/projects/{projectId}/users',
+            [ProjectAccessController::class, 'users'],
+        )
+            ->whereNumber('projectId')
+            ->middleware('can:project-access.manage');
+
         Route::get('/roles', [RoleController::class, 'index'])
             ->middleware('can:roles.view');
 
