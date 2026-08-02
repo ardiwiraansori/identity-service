@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\PermissionController;
+use App\Http\Controllers\Api\V1\ProjectAccessController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Support\Facades\Route;
@@ -32,6 +33,23 @@ Route::prefix('v1')
 
         Route::patch('/users/{user}/deactivate', [UserController::class, 'deactivate'])
             ->middleware('can:users.deactivate');
+
+        Route::get(
+            '/users/{user}/project-accesses',
+            [ProjectAccessController::class, 'index'],
+        )->middleware('can:project-access.manage');
+
+        Route::post(
+            '/users/{user}/project-accesses',
+            [ProjectAccessController::class, 'store'],
+        )->middleware('can:project-access.manage');
+
+        Route::delete(
+            '/users/{user}/project-accesses/{projectAccess}',
+            [ProjectAccessController::class, 'destroy'],
+        )
+            ->middleware('can:project-access.manage')
+            ->scopeBindings();
 
         Route::get('/roles', [RoleController::class, 'index'])
             ->middleware('can:roles.view');
